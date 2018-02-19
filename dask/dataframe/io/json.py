@@ -1,63 +1,63 @@
 # -*- coding: utf-8
 from __future__ import absolute_import, division, print_function
 
-from fnmatch import fnmatch
 from glob import glob
-import os
-import uuid
-from warnings import warn
 
 import pandas as pd
-from toolz import merge
 
-from .io import _link, from_pandas
-from ..core import DataFrame, new_dd_object
-from ... import multiprocessing
-from ...base import tokenize, compute_as_if_collection
-from ...bytes.utils import build_name_function
+from .io import from_pandas
 from ...compatibility import PY3
-from ...context import _globals
-from ...delayed import Delayed, delayed
-from ...local import get_sync
-from ...utils import effective_get, get_scheduler_lock
+from ...bytes import open_files
+from ...delayed import delayed
 
 
-def to_json(df, path, append=False, compute=True, **kwargs):
-    """Store Dask.dataframe to line-delimited JSON files"""
-    pass
+def pd_to_json(df, path_or_buf, **kwargs):
+    """Use pandas to write one dataframe chunk to JSON."""
+    with path_or_buf as f:
+        df.to_json(f, **kwargs)
+
+
+def to_json(df, path, compute=True, get=None, name_function=None, encoding='utf-8',
+            compression=None, **kwargs):
+    """Store Dask.dataframe to JSON files.
+
+    encoding : string, optional
+        A string representing the encoding to use in the output file,
+        defaults to 'ascii' on Python 2 and 'utf-8' on Python 3.
+    """
+    mode = 'w' if PY3 else 'wb'
+    files = open_files(path, compression=compression, mode=mode, encoding=encoding,
+                       name_function=name_function, num=df.npartitions)
+
+    write_chunk = delayed(pd_to_json, pure=False)
+    values = [write_chunk(d, f, **kwargs)
+              for d, f
+              in zip(df.to_delayed(), files)]
+    if compute:
+        delayed(values).compute(get=get)
+        return [f.path for f in files]
+    else:
+        return values
 
 
 def read_json(pattern, npartitions=None, chunksize=1000000, **kwargs):
-    """
-    Read JSON files (line-delimited) into a Dask DataFrame
+    """Read JSON files into a Dask DataFrame.
 
-    Read json files into a dask dataframe. This function is like
-    ``pandas.read_json``, except it can read from a single large file, or from
-    multiple files.
+    This function is like ``pandas.read_json``, except it can read from a single large file,
+    or from multiple files. Please see the Pandas docstring for more detailed information
+    about shared keyword arguments.
 
     Parameters
     ----------
     pattern : string, list
         File pattern (string), buffer to read from, or list of file
         paths. Can contain wildcards.
-    orient : string of expected JSON string format.
-        Possible values: "split", "records", "index", "columns", "values".
+    npartitions : int, optional
+        The number of partitions of the index to create. Note that depending on
+        the size and index of the dataframe, the output may have fewer
+        partitions than requested.
     chunksize : positive integer, optional
         Maximal number of rows per partition (default is 1000000).
-    typ : type of object to recover (series or frame), default ‘frame’
-    dtype : boolean or dict, default True
-        If True, infer dtypes, if a dict of column to dtype, then use those, if False,
-        then don’t infer dtypes at all, applies only to the data.
-    convert_axes : boolean, default True
-        Try to convert the axes to the proper dtypes.
-    convert_dates : boolean, default True
-        List of columns to parse for dates; If True, then try to parse datelike columns.
-        Default is True. A column label is datelike if:
-        * it ends with '_at',
-        * it ends with '_time',
-        * it begins with 'timestamp',
-        * it is 'modified', or
-        * it is 'date'
 
     Returns
     -------
@@ -82,10 +82,22 @@ def read_json(pattern, npartitions=None, chunksize=1000000, **kwargs):
     if chunksize <= 0:
         raise ValueError("Chunksize must be a positive integer")
 
+    missing_index_info = kwargs.get('orient', None) in ['records', 'values']
+
     from ..multi import concat
-    return concat([from_pandas(pd.read_json(path, **kwargs), npartitions=npartitions,
-                               chunksize=chunksize)
-                   for path in paths])
+    df = concat([from_pandas(pd.read_json(path, **kwargs),
+                             npartitions=npartitions,
+                             chunksize=chunksize)
+                 for path in paths],
+                interleave_partitions=missing_index_info)
+
+    # If we did not have indexed chunks, let's reindex the dataframe, otherwise its index
+    # will be created by stacking chunk indices, and those chunk indices don't make any sense
+    # together.
+    if missing_index_info:
+        df = df.reset_index(drop=True)
+
+    return df
 
 
 if PY3:
