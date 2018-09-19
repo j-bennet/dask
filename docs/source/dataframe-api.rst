@@ -72,12 +72,14 @@ Dataframe
     DataFrame.rtruediv
     DataFrame.sample
     DataFrame.set_index
+    DataFrame.shape
     DataFrame.std
     DataFrame.sub
     DataFrame.sum
     DataFrame.tail
     DataFrame.to_bag
     DataFrame.to_csv
+    DataFrame.to_dask_array
     DataFrame.to_delayed
     DataFrame.to_hdf
     DataFrame.to_json
@@ -181,6 +183,7 @@ Series
    Series.round
    Series.sample
    Series.sem
+   Series.shape
    Series.shift
    Series.size
    Series.std
@@ -189,6 +192,7 @@ Series
    Series.sum
    Series.to_bag
    Series.to_csv
+   Series.to_dask_array
    Series.to_delayed
    Series.to_frame
    Series.to_hdf
@@ -304,6 +308,14 @@ Store DataFrames
    to_records
    to_bag
    to_json
+
+Covert DataFrames
+~~~~~~~~~~~~~~~~~
+
+.. autosummary::
+
+   to_dask_array
+   to_delayed
 
 DataFrame Methods
 ~~~~~~~~~~~~~~~~~

@@ -13,9 +13,8 @@ from dask.compatibility import FileNotFoundError, unicode
 from dask.utils import filetexts
 from dask.bytes import compression
 from dask.bytes.local import LocalFileSystem
-from dask.bytes.core import (read_bytes, open_files, FileSystem,
-                             get_pyarrow_filesystem, logical_size,
-                             get_fs_token_paths)
+from dask.bytes.core import (read_bytes, open_files, get_pyarrow_filesystem,
+                             logical_size, get_fs_token_paths)
 
 compute = partial(compute, scheduler='sync')
 
@@ -158,6 +157,12 @@ def test_read_bytes_blocksize_float():
 
         with pytest.raises(TypeError):
             read_bytes('.test.account*', blocksize=5.5)
+
+
+def test_read_bytes_include_path():
+    with filetexts(files, mode='b'):
+        _, _, paths = read_bytes('.test.accounts.*', include_path=True)
+        assert {os.path.split(path)[1] for path in paths} == set(files.keys())
 
 
 def test_with_urls():
@@ -392,7 +397,7 @@ def test_abs_paths(tmpdir):
     assert res == 'hi'
 
 
-class UnknownFileSystem(FileSystem):
+class UnknownFileSystem(object):
     pass
 
 
